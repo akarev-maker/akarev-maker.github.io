@@ -56,6 +56,27 @@
   }
   .overlay.hidden { display: none; }
 
+  /* ===== Mobile "tap & drag" hint (shown only on touch devices) ===== */
+  .touch-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: #aeffc8;
+    background: rgba(6, 8, 22, 0.72);
+    border: 1px solid rgba(0, 245, 255, 0.3);
+    border-radius: 999px;
+    padding: 8px 18px;
+    pointer-events: none;     /* never intercept a touch meant for the canvas */
+    z-index: 5;
+    text-shadow: 0 0 8px rgba(60, 255, 150, 0.5);
+    white-space: nowrap;
+  }
+  .touch-hint.hidden { display: none; }
+
   h1 {
     font-family: 'Orbitron', sans-serif;
     font-weight: 900;
@@ -137,6 +158,9 @@
 <body>
 <div id="shell">
   <canvas id="game" width="700" height="420"></canvas>
+
+  <!-- Mobile-only aiming hint; revealed on touch devices, hidden after first shot -->
+  <div id="touchHint" class="touch-hint hidden">Tap &amp; drag from the ball to aim</div>
 
   <!-- Title screen -->
   <div id="titleScreen" class="overlay">
@@ -392,6 +416,20 @@ let aimStart = { x: 0, y: 0 };
 let aimNow = { x: 0, y: 0 };
 let t = 0;                 // global animation time (frames)
 let maxedOut = false;      // true if last hole ended on stroke cap
+
+// --- Touch / mobile input ---
+// Coarse pointers (phones/tablets) get a larger tap target around the ball and
+// an on-screen aiming hint that goes away once the player takes their first shot.
+const isTouchDevice =
+  (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+  ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+let firstShotTaken = false;
+const touchHint = document.getElementById('touchHint');
+
+// How close the press must be to the ball to start aiming. Touch gets a bigger
+// target (3x the ball radius beyond the mouse threshold) since fingers are coarse.
+const MOUSE_GRAB = BALL_R + 22;
+const TOUCH_GRAB = MOUSE_GRAB + BALL_R * 3;
 
 /* -------------------------------------------------------------------------
    3. LEVEL SETUP
@@ -1174,6 +1212,10 @@ function startGame() {
   levelIndex = 0;
   loadLevel(0);
   state = 'playing';
+  // Show the aiming hint on touch devices until the first shot is taken.
+  if (touchHint && isTouchDevice && !firstShotTaken) {
+    touchHint.classList.remove('hidden');
+  }
 }
 
 /* -------------------------------------------------------------------------
@@ -1194,31 +1236,46 @@ function fmtVsPar(d) {
 /* -------------------------------------------------------------------------
    8. INPUT HANDLING (click-drag slingshot from the ball)
    ------------------------------------------------------------------------- */
+// True for touch events; lets us pick the right coord source + grab radius.
+function isTouchEvent(e) { return !!(e.touches || e.changedTouches); }
+
+// Map a mouse/touch event to canvas coordinates, accounting for the element's
+// on-screen size vs. its internal resolution. On touchend e.touches is empty,
+// so fall back to changedTouches.
 function canvasPos(e) {
   const rect = canvas.getBoundingClientRect();
-  const px = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-  const py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  let src = e;
+  if (e.touches && e.touches.length)              src = e.touches[0];
+  else if (e.changedTouches && e.changedTouches.length) src = e.changedTouches[0];
+  const px = src.clientX - rect.left;
+  const py = src.clientY - rect.top;
   return { x: px * (W / rect.width), y: py * (H / rect.height) };
 }
 
 function onDown(e) {
   if (state !== 'playing' || ball.moving) return;
+  // For touch, stop the page from scrolling/zooming as soon as a finger lands
+  // on the play area — even if the tap isn't near the ball.
+  if (isTouchEvent(e)) e.preventDefault();
   const p = canvasPos(e);
-  // must start the drag near the ball
-  if (Math.hypot(p.x - ball.x, p.y - ball.y) > BALL_R + 22) return;
+  // must start the drag near the ball (bigger target on touch)
+  const grab = isTouchEvent(e) ? TOUCH_GRAB : MOUSE_GRAB;
+  if (Math.hypot(p.x - ball.x, p.y - ball.y) > grab) return;
   aiming = true;
   aimStart = { x: ball.x, y: ball.y };
   aimNow = p;
-  e.preventDefault();
+  if (!isTouchEvent(e)) e.preventDefault();
 }
 
 function onMove(e) {
+  if (isTouchEvent(e) && state === 'playing') e.preventDefault();
   if (!aiming) return;
   aimNow = canvasPos(e);
   e.preventDefault();
 }
 
 function onUp(e) {
+  if (isTouchEvent(e)) e.preventDefault();
   if (!aiming) return;
   aiming = false;
   const dx = aimStart.x - aimNow.x;
@@ -1228,14 +1285,22 @@ function onUp(e) {
   const power = Math.min(dist * POWER_SCALE, MAX_POWER);
   const angle = Math.atan2(dy, dx);
   shoot(power, angle);
+  // First successful shot dismisses the mobile hint.
+  if (!firstShotTaken) {
+    firstShotTaken = true;
+    if (touchHint) touchHint.classList.add('hidden');
+  }
 }
 
+// Mouse: move/up on window so the drag keeps working off-canvas.
 canvas.addEventListener('mousedown', onDown);
 window.addEventListener('mousemove', onMove);
 window.addEventListener('mouseup', onUp);
+// Touch: listeners on the canvas with { passive: false } so preventDefault works.
 canvas.addEventListener('touchstart', onDown, { passive: false });
-window.addEventListener('touchmove', onMove, { passive: false });
-window.addEventListener('touchend', onUp);
+canvas.addEventListener('touchmove',  onMove, { passive: false });
+canvas.addEventListener('touchend',   onUp,   { passive: false });
+canvas.addEventListener('touchcancel', onUp,  { passive: false });
 
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('nextBtn').addEventListener('click', nextHole);
