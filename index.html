@@ -558,10 +558,18 @@
       requestAnimationFrame(draw);
     })();
 
-    // ─── Hero preview — animated mini golf demo ────────────────
+    // ─── Hero preview — a player practicing one hole, on loop ──
+    // Mirrors the real game's feel: slingshot aim, normal-based wall
+    // bounces, turf friction. The "player" lines up a shot, releases,
+    // plays the ball from where it lies, mostly misses, and now and
+    // then sinks it — then re-tees and starts over.
     (function () {
       const canvas = document.getElementById('preview');
       const ctx    = canvas.getContext('2d');
+
+      // Physics — matched to the real game (golf.html)
+      const FRICTION = 0.985;   // turf drag per frame
+      const BOUNCE   = 0.65;    // energy kept on a wall bounce
 
       // Responsive canvas size
       function setSize() {
@@ -572,56 +580,213 @@
       setSize();
       window.addEventListener('resize', setSize);
 
-      // Course definition — scaled to canvas dimensions
       function getW() { return canvas.width; }
       function getH() { return canvas.height; }
+      function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-      // Ball state
+      // World state
       let ball = { x: 0, y: 0, vx: 0, vy: 0, r: 0 };
       let holeX = 0, holeY = 0;
-      let bounceCount = 0;
 
-      function reset() {
+      // Demo state machine: aim → roll → (sink | rest) → aim …
+      let phase = 'aim';   // 'aim' | 'roll' | 'rest' | 'sink'
+      let timer = 0;       // frames elapsed in the current phase
+      let shot  = { vx: 0, vy: 0, ratio: 0 }; // the queued/last shot
+      let sinkFrom = { x: 0, y: 0 };          // ball pos when it dropped
+      let attempt = 0, attemptsTarget = 3;    // miss a few, then sink it
+
+      const AIM_FRAMES  = 60;  // ~1.0s lining the shot up
+      const REST_FRAMES = 34;  // ~0.55s pause before the next try
+      const SINK_FRAMES = 46;  // ~0.75s drop-in animation
+
+      function tee() {
         const w = getW(), h = getH();
         ball.r  = w * 0.016;
         ball.x  = w * 0.1;
         ball.y  = h * 0.5;
-        ball.vx = w * 0.004;
-        ball.vy = -(h * 0.006);
+        ball.vx = ball.vy = 0;
         holeX   = w * 0.88;
         holeY   = h * 0.5;
-        bounceCount = 0;
+        attempt = 0;
+        attemptsTarget = 2 + Math.floor(Math.random() * 3); // 2–4 tries
+        phase = 'aim'; timer = 0;
       }
-      reset();
+      tee();
 
-      // Walls — proportional
+      // Walls — proportional (border + two internal bumpers)
       function walls() {
         const w = getW(), h = getH();
         return [
-          // border
           { x: w*0.04, y: h*0.1,  width: w*0.92, height: h*0.06 },
           { x: w*0.04, y: h*0.84, width: w*0.92, height: h*0.06 },
           { x: w*0.04, y: h*0.1,  width: w*0.03, height: h*0.80 },
           { x: w*0.93, y: h*0.1,  width: w*0.03, height: h*0.80 },
-          // internal bumper
           { x: w*0.38, y: h*0.3,  width: w*0.03, height: h*0.22 },
           { x: w*0.58, y: h*0.48, width: w*0.03, height: h*0.22 },
         ];
+      }
+
+      // ── Shot planning: aim at the hole, add human error ──────
+      // The first couple of tries are near misses (slide past the cup);
+      // once we hit the target attempt, dial it in so it actually drops.
+      function planShot() {
+        const w = getW();
+        const dx = holeX - ball.x, dy = holeY - ball.y;
+        const dist = Math.hypot(dx, dy);
+        let ang = Math.atan2(dy, dx);
+
+        attempt++;
+        const makeIt = attempt >= attemptsTarget;
+        let targetDist;
+        if (makeIt) {
+          // dead-on and just enough pace to trickle into the cup
+          ang += (Math.random() - 0.5) * 0.02;
+          targetDist = dist * 1.04;
+        } else {
+          // pull off to one side so it rolls past the hole, not in it
+          const side = Math.random() < 0.5 ? -1 : 1;
+          ang += side * (0.06 + Math.random() * 0.07);   // ~3.5°–7.5° off
+          // mix of runs-past and left-short so the misses vary
+          targetDist = Math.random() < 0.65
+            ? dist * (1.35 + Math.random() * 0.5)          // rolls past
+            : dist * (0.72 + Math.random() * 0.15);        // left short
+        }
+
+        // v0 chosen so friction bleeds the ball to ~targetDist
+        const v0 = targetDist * (1 - FRICTION);
+        const maxV0 = (w * 0.9) * (1 - FRICTION);
+        shot.vx = Math.cos(ang) * v0;
+        shot.vy = Math.sin(ang) * v0;
+        shot.ratio = clamp(v0 / maxV0, 0, 1);
+      }
+
+      // ── Smooth circle-vs-rect: push to tangent, reflect on normal ──
+      function resolveWall(wl) {
+        const cx = clamp(ball.x, wl.x, wl.x + wl.width);
+        const cy = clamp(ball.y, wl.y, wl.y + wl.height);
+        let dx = ball.x - cx, dy = ball.y - cy;
+        const r = ball.r;
+        const d2 = dx*dx + dy*dy;
+        if (d2 >= r*r) return false;
+
+        if (dx === 0 && dy === 0) {
+          // Center inside the rect — eject along least-penetration axis
+          const left = ball.x - wl.x, right = wl.x + wl.width - ball.x;
+          const top  = ball.y - wl.y, bot   = wl.y + wl.height - ball.y;
+          const minX = Math.min(left, right), minY = Math.min(top, bot);
+          if (minX < minY) {
+            if (left < right) { ball.x -= (minX + r); if (ball.vx > 0) ball.vx = -ball.vx * BOUNCE; }
+            else              { ball.x += (minX + r); if (ball.vx < 0) ball.vx = -ball.vx * BOUNCE; }
+          } else {
+            if (top < bot)    { ball.y -= (minY + r); if (ball.vy > 0) ball.vy = -ball.vy * BOUNCE; }
+            else              { ball.y += (minY + r); if (ball.vy < 0) ball.vy = -ball.vy * BOUNCE; }
+          }
+          return true;
+        }
+
+        const d  = Math.sqrt(d2);
+        const nx = dx / d, ny = dy / d;
+        ball.x += nx * (r - d);            // sit exactly tangent
+        ball.y += ny * (r - d);
+        const vn = ball.vx * nx + ball.vy * ny;
+        if (vn < 0) {                       // only reflect if closing in
+          ball.vx -= (1 + BOUNCE) * vn * nx;
+          ball.vy -= (1 + BOUNCE) * vn * ny;
+        }
+        return true;
+      }
+
+      function physics() {
+        const w = getW();
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        ball.vx *= FRICTION;
+        ball.vy *= FRICTION;
+
+        // a few passes so tight corners fully resolve in one frame
+        const ws = walls();
+        for (let pass = 0; pass < 3; pass++) {
+          let hit = false;
+          for (const wl of ws) { if (resolveWall(wl)) hit = true; }
+          if (!hit) break;
+        }
+
+        let speed = Math.hypot(ball.vx, ball.vy);
+        const distHole = Math.hypot(ball.x - holeX, ball.y - holeY);
+
+        // Cup magnet: a ball rolling slowly near the lip gets pulled in and
+        // curls toward the centre (so a good shot drops instead of skimming).
+        if (distHole < ball.r * 3 && speed < w * 0.007) {
+          ball.vx += (holeX - ball.x) * 0.05;
+          ball.vy += (holeY - ball.y) * 0.05;
+          speed = Math.hypot(ball.vx, ball.vy);
+        }
+
+        // Drop in: ball is over the cup
+        if (distHole < ball.r * 1.25) {
+          sinkFrom.x = ball.x; sinkFrom.y = ball.y;
+          ball.vx = ball.vy = 0;
+          phase = 'sink'; timer = 0;
+          return;
+        }
+        // Came to rest — the player will try again from here
+        if (speed < w * 0.0009) {
+          ball.vx = ball.vy = 0;
+          phase = 'rest'; timer = 0;
+        }
+      }
+
+      // ── Rendering ────────────────────────────────────────────
+      function powerColor(r) {
+        // green → yellow → red, like the real game's aim line
+        let cr, cg, cb;
+        if (r < 0.5) { const t = r / 0.5;
+          cr = 57 + (255 - 57) * t; cg = 255 + (184 - 255) * t; cb = 20 + (0 - 20) * t;
+        } else { const t = (r - 0.5) / 0.5;
+          cr = 255; cg = 184 + (60 - 184) * t; cb = 0 + (60 - 0) * t;
+        }
+        return `rgb(${cr|0},${cg|0},${cb|0})`;
+      }
+
+      function drawAim() {
+        const w = getW();
+        // grow the pull-back as the player "winds up"
+        const p = Math.min(timer / AIM_FRAMES, 1);
+        const ease = p * p * (3 - 2 * p);
+        const len = (ball.r * 1.5 + shot.ratio * w * 0.13) * ease;
+        const v0 = Math.hypot(shot.vx, shot.vy) || 1;
+        const dirx = shot.vx / v0, diry = shot.vy / v0;
+        const col = powerColor(shot.ratio);
+
+        // dotted slingshot line pulling back behind the ball
+        ctx.save();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ball.x, ball.y);
+        ctx.lineTo(ball.x - dirx * len, ball.y - diry * len);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // power ring around the ball
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r + 3 + shot.ratio * 4 * ease, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.restore();
       }
 
       function drawScene() {
         const w = getW(), h = getH();
         const ws = walls();
 
-        // Background
         ctx.fillStyle = '#0a0a1a';
         ctx.fillRect(0, 0, w, h);
 
-        // Turf
         ctx.fillStyle = '#0f3d1a';
         ctx.fillRect(w*0.07, h*0.16, w*0.86, h*0.68);
 
-        // Turf grid lines
         ctx.strokeStyle = 'rgba(255,255,255,0.03)';
         ctx.lineWidth = 1;
         for (let x = w*0.07; x < w*0.93; x += w*0.06) {
@@ -631,7 +796,6 @@
           ctx.beginPath(); ctx.moveTo(w*0.07, y); ctx.lineTo(w*0.93, y); ctx.stroke();
         }
 
-        // Walls
         ws.forEach(wall => {
           ctx.shadowColor = '#00f5ff';
           ctx.shadowBlur  = 8;
@@ -666,66 +830,42 @@
         ctx.lineTo(holeX,          holeY - w*0.04);
         ctx.fill();
 
-        // Ball
+        // Aim line only while lining up
+        if (phase === 'aim') drawAim();
+
+        // Ball — during 'sink' it slides into the cup and shrinks
+        let bx = ball.x, by = ball.y, br = ball.r;
+        if (phase === 'sink') {
+          const t = Math.min(timer / SINK_FRAMES, 1);
+          bx = sinkFrom.x + (holeX - sinkFrom.x) * t;
+          by = sinkFrom.y + (holeY - sinkFrom.y) * t;
+          br = ball.r * (1 - t * 0.85);
+        }
         ctx.shadowColor = '#ffffff';
         ctx.shadowBlur  = 10;
         ctx.beginPath();
-        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+        ctx.arc(bx, by, br, 0, Math.PI*2);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
         ctx.shadowBlur = 0;
       }
 
-      function rectCircleCollide(rx, ry, rw, rh, cx, cy, cr) {
-        const nearX = Math.max(rx, Math.min(cx, rx + rw));
-        const nearY = Math.max(ry, Math.min(cy, ry + rh));
-        const dx = cx - nearX, dy = cy - nearY;
-        return dx*dx + dy*dy < cr*cr;
-      }
-
-      function update() {
-        const w = getW(), h = getH();
-        const ws = walls();
-
-        ball.vx *= 0.995;
-        ball.vy *= 0.995;
-        ball.x  += ball.vx;
-        ball.y  += ball.vy;
-
-        // Wall collisions
-        ws.forEach(wall => {
-          if (rectCircleCollide(wall.x, wall.y, wall.width, wall.height, ball.x, ball.y, ball.r)) {
-            const fromLeft  = (ball.x - ball.r) - (wall.x + wall.width);
-            const fromRight = wall.x - (ball.x + ball.r);
-            const fromTop   = (ball.y - ball.r) - (wall.y + wall.height);
-            const fromBot   = wall.y - (ball.y + ball.r);
-            const minH = Math.min(Math.abs(fromLeft), Math.abs(fromRight));
-            const minV = Math.min(Math.abs(fromTop),  Math.abs(fromBot));
-            if (minH < minV) {
-              ball.vx *= -0.7;
-              ball.x  += fromLeft < fromRight ? fromLeft : -fromRight;
-            } else {
-              ball.vy *= -0.7;
-              ball.y  += fromTop < fromBot ? fromTop : -fromBot;
-            }
-            bounceCount++;
-          }
-        });
-
-        // Hole reached — reset with a new angle
-        const dx = ball.x - holeX, dy = ball.y - holeY;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < w*0.025 || ball.x < w*0.04 || ball.x > w*0.96 || bounceCount > 30) {
-          reset();
-          // Vary direction each loop
-          const angle = Math.random() * Math.PI * 0.5 - Math.PI * 0.1;
-          ball.vx =  Math.cos(angle) * w * 0.004;
-          ball.vy = -Math.sin(angle) * h * 0.006;
-        }
-      }
-
+      // ── Main loop ────────────────────────────────────────────
       function loop() {
-        update();
+        timer++;
+        if (phase === 'aim') {
+          if (timer === 1) planShot();
+          if (timer >= AIM_FRAMES) {        // release
+            ball.vx = shot.vx; ball.vy = shot.vy;
+            phase = 'roll'; timer = 0;
+          }
+        } else if (phase === 'roll') {
+          physics();
+        } else if (phase === 'rest') {
+          if (timer >= REST_FRAMES) { phase = 'aim'; timer = 0; }
+        } else if (phase === 'sink') {
+          if (timer >= SINK_FRAMES) { tee(); }  // celebrate done → new ball
+        }
         drawScene();
         requestAnimationFrame(loop);
       }
