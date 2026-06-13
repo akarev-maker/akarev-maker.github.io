@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Midnight Mini Golf</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== Global / page theme ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: radial-gradient(ellipse at 50% 30%, #11112b 0%, #0a0a1a 70%, #050510 100%);
+    color: #cfeaff;
+    font-family: 'Rajdhani', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* ===== Game shell ===== */
+  #shell {
+    position: relative;
+    width: 700px;
+    height: 420px;
+    border-radius: 14px;
+    box-shadow:
+      0 0 0 2px rgba(0, 245, 255, 0.25),
+      0 0 40px rgba(0, 245, 255, 0.18),
+      0 20px 60px rgba(0, 0, 0, 0.7);
+  }
+
+  canvas {
+    display: block;
+    border-radius: 14px;
+    cursor: crosshair;
+  }
+
+  /* ===== Overlay screens (title / star / scorecard) ===== */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: rgba(6, 8, 22, 0.86);
+    backdrop-filter: blur(4px);
+    border-radius: 14px;
+    padding: 24px;
+    z-index: 10;
+  }
+  .overlay.hidden { display: none; }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 44px;
+    letter-spacing: 2px;
+    color: #00f5ff;
+    text-shadow: 0 0 12px rgba(0, 245, 255, 0.8), 0 0 28px rgba(0, 245, 255, 0.5);
+    margin-bottom: 6px;
+  }
+  h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 28px;
+    color: #aeffc8;
+    text-shadow: 0 0 10px rgba(60, 255, 150, 0.6);
+    margin-bottom: 14px;
+  }
+  .subtitle { color: #7fd4ff; font-size: 18px; letter-spacing: 3px; margin-bottom: 22px; opacity: 0.85; }
+  .instructions {
+    max-width: 440px;
+    line-height: 1.6;
+    font-size: 16px;
+    color: #9fc6e0;
+    margin-bottom: 26px;
+  }
+  .instructions b { color: #00f5ff; }
+
+  /* ===== Neon buttons ===== */
+  button.neon {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: #0a0a1a;
+    background: linear-gradient(180deg, #4dfff0, #00f5ff);
+    border: none;
+    padding: 12px 34px;
+    border-radius: 30px;
+    cursor: pointer;
+    box-shadow: 0 0 18px rgba(0, 245, 255, 0.7), 0 0 40px rgba(0, 245, 255, 0.35);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  button.neon:hover {
+    transform: scale(1.06);
+    box-shadow: 0 0 26px rgba(0, 245, 255, 0.95), 0 0 60px rgba(0, 245, 255, 0.5);
+  }
+  button.neon:active { transform: scale(0.98); }
+
+  /* ===== Star rating ===== */
+  .stars { font-size: 52px; margin: 8px 0 16px; letter-spacing: 8px; }
+  .star-on { color: #ffd84d; text-shadow: 0 0 16px rgba(255, 216, 77, 0.9); }
+  .star-off { color: #2a2a44; }
+  .score-line { font-size: 20px; color: #cfeaff; margin-bottom: 8px; }
+  .rank-label { font-size: 22px; color: #aeffc8; font-weight: 700; letter-spacing: 1px; margin-bottom: 18px; }
+
+  /* ===== Scorecard table ===== */
+  table {
+    border-collapse: collapse;
+    margin: 10px 0 22px;
+    font-size: 15px;
+    width: 520px;
+  }
+  th, td { padding: 6px 10px; text-align: center; }
+  th {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #00f5ff;
+    border-bottom: 2px solid rgba(0, 245, 255, 0.4);
+  }
+  td { border-bottom: 1px solid rgba(0, 245, 255, 0.12); color: #cfeaff; }
+  tr.total-row td { font-weight: 700; color: #affff0; border-top: 2px solid rgba(0,245,255,0.4); border-bottom: none; padding-top: 10px; }
+  .under { color: #6bff9e; }
+  .over { color: #ff7b7b; }
+  .even { color: #ffd84d; }
+  .name-col { text-align: left; color: #9fc6e0; }
+</style>
+</head>
+<body>
+<div id="shell">
+  <canvas id="game" width="700" height="420"></canvas>
+
+  <!-- Title screen -->
+  <div id="titleScreen" class="overlay">
+    <h1>Midnight Mini Golf</h1>
+    <div class="subtitle">&#9702; NEON ISLAND &#9702;</div>
+    <div class="instructions">
+      Click and drag <b>from the ball</b> to aim. The further you pull back,
+      the more power you get &mdash; watch the aim line shift from
+      <b style="color:#6bff9e">green</b> to <b style="color:#ffd84d">yellow</b>
+      to <b style="color:#ff5b5b">red</b>. Release to shoot.<br><br>
+      Sink the ball in as few strokes as possible across 9 holes.
+    </div>
+    <button class="neon" id="startBtn">START</button>
+  </div>
+
+  <!-- Between-hole star rating -->
+  <div id="starScreen" class="overlay hidden">
+    <h2 id="starHoleName">Hole Complete</h2>
+    <div class="stars" id="starRow"></div>
+    <div class="rank-label" id="rankLabel"></div>
+    <div class="score-line" id="starScoreLine"></div>
+    <button class="neon" id="nextBtn">NEXT HOLE</button>
+  </div>
+
+  <!-- Final scorecard -->
+  <div id="cardScreen" class="overlay hidden">
+    <h2>Final Scorecard</h2>
+    <table id="scoreTable"></table>
+    <button class="neon" id="againBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   MIDNIGHT MINI GOLF
+   A single-file canvas mini golf game with a neon midnight-island theme.
+   Sections below are clearly separated so the code reads top-to-bottom.
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. LEVEL DATA
+   Every hole is a plain object. Edit these freely to design new courses.
+   - walls:  array of {x, y, w, h} axis-aligned rectangles (also outer border)
+   - start:  {x, y} ball spawn
+   - hole:   {x, y} cup center
+   - par:    expected strokes
+   - name:   shown on the HUD and star screen
+   - extras: optional windmill / slopes / sand / movers (see render+physics)
+   Canvas play area is 700 x 420.
+   ------------------------------------------------------------------------- */
+const W = 700, H = 420;
+const BORDER = 14; // thickness of the outer boundary walls
+
+// Helper to build the four outer boundary walls for a hole.
+function border() {
+  return [
+    { x: 0,        y: 0,          w: W,      h: BORDER },          // top
+    { x: 0,        y: H - BORDER, w: W,      h: BORDER },          // bottom
+    { x: 0,        y: 0,          w: BORDER, h: H },               // left
+    { x: W-BORDER, y: 0,          w: BORDER, h: H },               // right
+  ];
+}
+
+const LEVELS = [
+  // --- Hole 1: Straight shot with one angled (stepped) wall, par 2 ---
+  {
+    name: "1 · First Light",
+    par: 2,
+    start: { x: 90, y: 210 },
+    hole:  { x: 600, y: 210 },
+    walls: [
+      ...border(),
+      // a small baffle to nudge around
+      { x: 330, y: 60, w: 24, h: 130 },
+    ],
+  },
+
+  // --- Hole 2: L-shaped dogleg, par 3 ---
+  {
+    name: "2 · The Dogleg",
+    par: 3,
+    start: { x: 90, y: 90 },
+    hole:  { x: 600, y: 330 },
+    walls: [
+      ...border(),
+      { x: 200, y: 14,  w: 24, h: 230 }, // forces a turn
+      { x: 420, y: 170, w: 24, h: 236 },
+    ],
+  },
+
+  // --- Hole 3: Narrow corridor with bumpers, par 3 ---
+  {
+    name: "3 · Bumper Run",
+    par: 3,
+    start: { x: 90, y: 210 },
+    hole:  { x: 610, y: 210 },
+    walls: [
+      ...border(),
+      { x: 14,  y: 130, w: 480, h: 16 }, // corridor top
+      { x: 200, y: 274, w: 486, h: 16 }, // corridor bottom
+      { x: 300, y: 146, w: 16,  h: 60 }, // bumper
+      { x: 440, y: 210, w: 16,  h: 64 }, // bumper
+    ],
+  },
+
+  // --- Hole 4: Windmill obstacle (rotating blades), par 4 ---
+  {
+    name: "4 · The Windmill",
+    par: 4,
+    start: { x: 90, y: 340 },
+    hole:  { x: 610, y: 80 },
+    walls: [
+      ...border(),
+      { x: 14,  y: 200, w: 280, h: 16 }, // wide gap from x=294..406 (112px)
+      { x: 406, y: 200, w: 280, h: 16 },
+    ],
+    // Blades now BOUNCE the ball (no reset), so we can keep them lively.
+    windmill: { x: 350, y: 208, blade: 70, speed: 0.015, hub: 14 },
+  },
+
+  // --- Hole 5: Slope zones that push the ball, par 4 ---
+  {
+    name: "5 · Tilted Greens",
+    par: 4,
+    start: { x: 90, y: 350 },
+    hole:  { x: 600, y: 70 },
+    walls: [
+      ...border(),
+      { x: 250, y: 120, w: 24, h: 286 },
+      { x: 450, y: 14,  w: 24, h: 286 },
+    ],
+    slopes: [
+      { x: 14,  y: 14,  w: 236, h: 392, fx: 0,     fy: -0.05 }, // pushes up
+      { x: 274, y: 14,  w: 176, h: 392, fx: 0.05,  fy: 0     }, // pushes right
+      { x: 474, y: 14,  w: 212, h: 392, fx: 0,     fy: -0.05 }, // pushes up
+    ],
+  },
+
+  // --- Hole 6: Sand traps that increase friction, par 4 ---
+  {
+    name: "6 · Sand Pits",
+    par: 4,
+    start: { x: 90, y: 210 },
+    hole:  { x: 610, y: 210 },
+    walls: [
+      ...border(),
+      { x: 150, y: 14,  w: 16, h: 70 },  // gate that pinches the top lane near start
+      { x: 520, y: 336, w: 16, h: 70 },  // gate that pinches the bottom lane near hole
+    ],
+    // One big sand field straddles the direct line, so a straight shot dies in
+    // it. The only fast routes are the grass lanes along the top and bottom.
+    sand: [
+      { x: 215, y: 96, w: 270, h: 228 },
+    ],
+  },
+
+  // --- Hole 7: The maze, par 4 ---
+  {
+    name: "7 · The Maze",
+    par: 5,
+    start: { x: 60, y: 360 },
+    hole:  { x: 640, y: 56 },
+    walls: [
+      ...border(),
+      { x: 14,  y: 270, w: 540, h: 16 }, // bottom divider, gap on the right
+      { x: 250, y: 286, w: 16, h: 70 },  // baffle hanging down into bottom row
+      { x: 410, y: 336, w: 16, h: 70 },  // baffle rising up from the floor
+      { x: 146, y: 150, w: 540, h: 16 }, // middle divider, gap on the left
+      { x: 420, y: 210, w: 16, h: 60 },  // baffle in the middle row
+      { x: 300, y: 14,  w: 16, h: 70 },  // top baffle hanging down
+      { x: 480, y: 80,  w: 16, h: 70 },  // top baffle rising up
+    ],
+    // A sand pocket sits in the long bottom run, and the middle corridor tilts
+    // RIGHT while you're trying to travel left toward the exit gap.
+    sand: [
+      { x: 300, y: 300, w: 100, h: 92 },
+    ],
+    slopes: [
+      { x: 160, y: 166, w: 520, h: 104, fx: 0.04, fy: 0, arrow: { x: 250, y: 218 } },
+    ],
+  },
+
+  // --- Hole 8: Two moving walls sliding back and forth, par 5 ---
+  {
+    name: "8 · Sliding Gates",
+    par: 5,
+    start: { x: 90, y: 210 },
+    hole:  { x: 610, y: 210 },
+    walls: [
+      ...border(),
+    ],
+    // Faster, wider-sweeping gates that physically shove the ball if they
+    // slide into it (see resolveMovingRect).
+    movers: [
+      { x: 250, y: 14,  w: 22, h: 150, axis: 'y', range: 190, speed: 2.6, phase: 0 },
+      { x: 450, y: 256, w: 22, h: 150, axis: 'y', range: 190, speed: 2.4, phase: Math.PI },
+    ],
+  },
+
+  // --- Hole 9: Gauntlet -- slopes + sand + sweeping wall, par 6 ---
+  {
+    name: "9 · The Gauntlet",
+    par: 6,
+    start: { x: 60, y: 360 },
+    hole:  { x: 630, y: 70 },
+    walls: [
+      ...border(),
+      { x: 14,  y: 250, w: 420, h: 16 }, // lower divider, gap on the right
+      { x: 300, y: 100, w: 386, h: 16 }, // upper divider, gap on the left
+    ],
+    // Three legs: (1) drive RIGHT across a sloped, sandy floor to the up-gap,
+    // (2) time the sweeping gate in the middle, (3) cut LEFT then up-left and
+    // ride the top slope into the cup.
+    slopes: [
+      { x: 14, y: 266, w: 672, h: 140, fx: 0.05,  fy: 0, arrow: { x: 140, y: 336 } }, // bottom drives right
+      { x: 14, y: 14,  w: 286, h: 86,  fx: 0.045, fy: 0 }, // top-left feeds the hole
+    ],
+    sand: [
+      { x: 250, y: 300, w: 130, h: 106 }, // sand in the bottom drive
+      { x: 360, y: 130, w: 120, h: 100 }, // sand guarding the middle
+    ],
+    movers: [
+      { x: 480, y: 116, w: 22, h: 134, axis: 'x', range: 160, speed: 2.2, phase: 0 },
+    ],
+  },
+];
+
+/* -------------------------------------------------------------------------
+   2. GAME STATE
+   ------------------------------------------------------------------------- */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const BALL_R = 7;          // ball radius
+const HOLE_R = 11;         // visual cup radius
+const MAX_POWER = 18;      // velocity cap
+const POWER_SCALE = 0.16;  // drag distance -> velocity
+const FRICTION = 0.983;    // normal turf friction
+const SAND_FRICTION = 0.93;// sand friction
+const BOUNCE = 0.65;       // energy kept on wall bounce
+const STOP_SPEED = 0.08;   // below this the ball halts
+const HOLE_GRAB_DIST = 8;  // distance to cup center to sink
+const HOLE_MAX_SPEED = 7;  // must be slower than this to drop
+const MAX_STROKES = 8;
+
+let state = 'title';       // 'title' | 'playing' | 'star' | 'card'
+let levelIndex = 0;
+let ball = { x: 0, y: 0, vx: 0, vy: 0, moving: false };
+let strokes = 0;
+let scores = [];           // strokes taken per completed hole
+let aiming = false;
+let aimStart = { x: 0, y: 0 };
+let aimNow = { x: 0, y: 0 };
+let t = 0;                 // global animation time (frames)
+let maxedOut = false;      // true if last hole ended on stroke cap
+
+/* -------------------------------------------------------------------------
+   3. LEVEL SETUP
+   ------------------------------------------------------------------------- */
+function loadLevel(i) {
+  const lvl = LEVELS[i];
+  ball.x = lvl.start.x;
+  ball.y = lvl.start.y;
+  ball.vx = 0; ball.vy = 0; ball.moving = false;
+  strokes = 0;
+  maxedOut = false;
+  aiming = false;
+}
+
+function currentLevel() { return LEVELS[levelIndex]; }
+
+/* -------------------------------------------------------------------------
+   4. DRAWING FUNCTIONS
+   ------------------------------------------------------------------------- */
+
+// The backdrop + turf never change, so we render them ONCE to an offscreen
+// canvas and just blit that each frame (no per-frame gradients or ~1000 dot
+// fills). drawBoard() does the blit; prerenderBoard() builds the cache.
+const boardCanvas = document.createElement('canvas');
+boardCanvas.width = W;
+boardCanvas.height = H;
+const bctx = boardCanvas.getContext('2d');
+
+function prerenderBoard() {
+  const pad = BORDER;
+
+  // deep navy backdrop with a faint vignette
+  bctx.fillStyle = '#0a0a1a';
+  bctx.fillRect(0, 0, W, H);
+  let g = bctx.createRadialGradient(W/2, H/2, 60, W/2, H/2, 460);
+  g.addColorStop(0, 'rgba(20,24,55,0.6)');
+  g.addColorStop(1, 'rgba(5,5,16,0.9)');
+  bctx.fillStyle = g;
+  bctx.fillRect(0, 0, W, H);
+
+  // glowing green turf inset
+  bctx.save();
+  bctx.shadowColor = 'rgba(40, 220, 120, 0.45)';
+  bctx.shadowBlur = 30;
+  g = bctx.createLinearGradient(0, pad, 0, H - pad);
+  g.addColorStop(0, '#0f3d2a');
+  g.addColorStop(0.5, '#11502f');
+  g.addColorStop(1, '#0c3823');
+  bctx.fillStyle = g;
+  roundRect(pad, pad, W - pad * 2, H - pad * 2, 8, bctx);
+  bctx.fill();
+  bctx.restore();
+
+  // subtle texture: faint grid of dots
+  bctx.save();
+  roundRect(pad, pad, W - pad * 2, H - pad * 2, 8, bctx);
+  bctx.clip();
+  bctx.fillStyle = 'rgba(120, 255, 180, 0.05)';
+  for (let y = pad + 8; y < H - pad; y += 16) {
+    for (let x = pad + 8; x < W - pad; x += 16) {
+      bctx.fillRect(x, y, 1.5, 1.5);
+    }
+  }
+  bctx.restore();
+}
+
+// Blit the cached board.
+function drawBoard() {
+  ctx.drawImage(boardCanvas, 0, 0);
+}
+
+// Traps drawn UNDER the ball/walls: sand and slope zones.
+function drawTraps() {
+  const lvl = currentLevel();
+
+  // Slope zones: subtle gradient + a direction arrow.
+  if (lvl.slopes) {
+    for (const s of lvl.slopes) {
+      ctx.save();
+      const ang = Math.atan2(s.fy, s.fx);
+      const gx = Math.cos(ang), gy = Math.sin(ang);
+      const grad = ctx.createLinearGradient(
+        s.x + s.w / 2 - gx * s.w / 2, s.y + s.h / 2 - gy * s.h / 2,
+        s.x + s.w / 2 + gx * s.w / 2, s.y + s.h / 2 + gy * s.h / 2
+      );
+      grad.addColorStop(0, 'rgba(0, 180, 255, 0.0)');
+      grad.addColorStop(1, 'rgba(0, 180, 255, 0.14)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(s.x, s.y, s.w, s.h);
+      // (direction arrows are drawn later in drawSlopeArrows, on top of
+      //  walls and sand, so they're always visible)
+      ctx.restore();
+    }
+  }
+
+  // Sand traps: rendered as an actual grainy sand patch (no text label).
+  if (lvl.sand) {
+    for (const s of lvl.sand) drawSand(s);
+  }
+}
+
+// Deterministic 0..1 hash so the sand grains stay still between frames.
+function pseudo(a, b) {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+// One sand patch: a smooth warm gradient with soft dune mottling and gentle
+// ripples — meant to read as a calm sand bunker, not noisy static.
+function drawSand(s) {
+  // base fill with a soft outer glow for cohesion with the neon board
+  ctx.save();
+  ctx.shadowColor = 'rgba(180, 140, 70, 0.4)';
+  ctx.shadowBlur = 14;
+  const g = ctx.createLinearGradient(s.x, s.y, s.x, s.y + s.h);
+  g.addColorStop(0,    '#ecd6a0');
+  g.addColorStop(0.55, '#d6b66b');
+  g.addColorStop(1,    '#bf9c4c');
+  ctx.fillStyle = g;
+  roundRect(s.x, s.y, s.w, s.h, 16);
+  ctx.fill();
+  ctx.restore();
+
+  // everything else is clipped to the patch
+  ctx.save();
+  roundRect(s.x, s.y, s.w, s.h, 16);
+  ctx.clip();
+
+  // soft dune mottling: large, blurred, deterministic light/dark blobs
+  const blobs = Math.max(5, Math.floor((s.w * s.h) / 4200));
+  for (let i = 0; i < blobs; i++) {
+    const bx = s.x + pseudo(i + 1, s.x * 0.1 + 3) * s.w;
+    const by = s.y + pseudo(s.y * 0.1 + 2, i + 5) * s.h;
+    const r3 = pseudo(i * 2 + 1, i + 9);
+    const br = 24 + r3 * 42;
+    const rg = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+    if (r3 > 0.5) { // raised, sunlit dune
+      rg.addColorStop(0, 'rgba(247, 230, 178, 0.45)');
+      rg.addColorStop(1, 'rgba(247, 230, 178, 0)');
+    } else {        // shallow shadowed dip
+      rg.addColorStop(0, 'rgba(150, 116, 55, 0.38)');
+      rg.addColorStop(1, 'rgba(150, 116, 55, 0)');
+    }
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // gentle, smooth wind ripples
+  ctx.strokeStyle = 'rgba(158, 122, 58, 0.22)';
+  ctx.lineWidth = 2;
+  for (let ry = s.y + 20; ry < s.y + s.h - 6; ry += 26) {
+    ctx.beginPath();
+    for (let rx = s.x; rx <= s.x + s.w; rx += 12) {
+      const yy = ry + Math.sin((rx - s.x) * 0.05 + ry * 0.3) * 4;
+      if (rx === s.x) ctx.moveTo(rx, yy); else ctx.lineTo(rx, yy);
+    }
+    ctx.stroke();
+  }
+
+  // soft inner top highlight so the bunker reads as a shallow bowl
+  ctx.strokeStyle = 'rgba(255, 244, 210, 0.3)';
+  ctx.lineWidth = 2;
+  roundRect(s.x + 2, s.y + 2, s.w - 4, s.h - 4, 14);
+  ctx.stroke();
+  ctx.restore();
+
+  // darker outer rim so the edge reads as a depression
+  ctx.save();
+  ctx.strokeStyle = 'rgba(120, 90, 38, 0.65)';
+  ctx.lineWidth = 2;
+  roundRect(s.x, s.y, s.w, s.h, 16);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// One direction arrow per slope, drawn AFTER walls + sand so it's never
+// hidden. Defaults to the zone center; a slope may set `arrow:{x,y}` to nudge
+// it to a clear spot away from walls or sand.
+function drawSlopeArrows() {
+  const lvl = currentLevel();
+  if (!lvl.slopes) return;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+  ctx.shadowBlur = 4;
+  for (const s of lvl.slopes) {
+    const ang = Math.atan2(s.fy, s.fx);
+    const ax = s.arrow ? s.arrow.x : s.x + s.w / 2;
+    const ay = s.arrow ? s.arrow.y : s.y + s.h / 2;
+    drawArrow(ax, ay, ang, 20, 'rgba(170, 238, 255, 0.9)');
+  }
+  ctx.restore();
+}
+
+// Small arrow helper used by slope zones.
+function drawArrow(cx, cy, ang, len, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(ang);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-len, 0);
+  ctx.lineTo(len, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(len, 0);
+  ctx.lineTo(len - 8, -6);
+  ctx.lineTo(len - 8, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Neon cyan walls with a glow. Moving walls pulse in opacity.
+function drawWalls() {
+  const lvl = currentLevel();
+  ctx.save();
+  ctx.shadowColor = '#00f5ff';
+  ctx.shadowBlur = 14;
+
+  for (const w of lvl.walls) {
+    paintWall(w, 1);
+  }
+
+  // moving walls (positions are updated in physics step)
+  if (lvl.movers) {
+    for (const m of lvl.movers) {
+      const pulse = 0.55 + 0.45 * Math.abs(Math.sin(t * 0.06 + m.phase));
+      paintWall(m, pulse);
+    }
+  }
+  ctx.restore();
+}
+
+function paintWall(w, opacity) {
+  // outer neon edge
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = '#00f5ff';
+  roundRect(w.x, w.y, w.w, w.h, 4);
+  ctx.fill();
+  // darker inner core for depth
+  ctx.fillStyle = 'rgba(0, 60, 80, 0.9)';
+  roundRect(w.x + 2, w.y + 2, Math.max(0, w.w - 4), Math.max(0, w.h - 4), 3);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// The windmill: a hub plus 4 rotating blades. Drawn with ctx.rotate.
+function drawWindmill() {
+  const lvl = currentLevel();
+  if (!lvl.windmill) return;
+  const wm = lvl.windmill;
+  const angle = t * wm.speed;
+
+  ctx.save();
+  ctx.translate(wm.x, wm.y);
+  ctx.shadowColor = '#00f5ff';
+  ctx.shadowBlur = 16;
+
+  // 4 blades, 90 degrees apart
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate(angle + i * Math.PI / 2);
+    ctx.fillStyle = '#00f5ff';
+    roundRect(-6, -6, wm.blade, 12, 4);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0, 70, 90, 0.85)';
+    roundRect(-4, -4, wm.blade - 4, 8, 3);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // hub
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#aeffff';
+  ctx.beginPath();
+  ctx.arc(0, 0, wm.hub, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Glowing cup with a little red flag.
+function drawHole() {
+  const h = currentLevel().hole;
+  ctx.save();
+  // glow ring
+  ctx.shadowColor = 'rgba(120,255,180,0.9)';
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = '#04150d';
+  ctx.beginPath();
+  ctx.arc(h.x, h.y, HOLE_R, 0, Math.PI * 2);
+  ctx.fill();
+  // bright rim
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = '#6bffb0';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(h.x, h.y, HOLE_R, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // flag pole + red flag, swaying gently
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,80,80,0.7)';
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = '#e8f6ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(h.x, h.y - 2);
+  ctx.lineTo(h.x, h.y - 34);
+  ctx.stroke();
+  const flutter = Math.sin(t * 0.1) * 3;
+  ctx.fillStyle = '#ff3b4e';
+  ctx.beginPath();
+  ctx.moveTo(h.x, h.y - 34);
+  ctx.lineTo(h.x + 20, h.y - 29 + flutter);
+  ctx.lineTo(h.x, h.y - 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// The ball: white with a soft glow and a highlight.
+function drawBall() {
+  ctx.save();
+  ctx.shadowColor = 'rgba(180, 240, 255, 0.9)';
+  ctx.shadowBlur = 16;
+  const grad = ctx.createRadialGradient(
+    ball.x - 2, ball.y - 2, 1, ball.x, ball.y, BALL_R
+  );
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(1, '#a9d8ec');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Dotted neon aim line; color shifts green->yellow->red with power.
+function drawAimLine() {
+  if (!aiming) return;
+  // vector points OPPOSITE to the drag (slingshot)
+  const dx = aimStart.x - aimNow.x;
+  const dy = aimStart.y - aimNow.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 4) return;
+
+  const power = Math.min(dist * POWER_SCALE, MAX_POWER);
+  const ratio = power / MAX_POWER;           // 0..1
+  const color = powerColor(ratio);
+
+  // line length reflects power, capped
+  const ang = Math.atan2(dy, dx);
+  const len = Math.min(dist, MAX_POWER / POWER_SCALE);
+  const ex = ball.x + Math.cos(ang) * len;
+  const ey = ball.y + Math.sin(ang) * len;
+
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.moveTo(ball.x, ball.y);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // little power dot at the tip
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(ex, ey, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // power meter ring around the ball
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, BALL_R + 5, -Math.PI/2, -Math.PI/2 + ratio * Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Interpolate green -> yellow -> red based on 0..1 power ratio.
+function powerColor(r) {
+  let cr, cg;
+  if (r < 0.5) { // green -> yellow
+    const k = r / 0.5;
+    cr = Math.round(107 + k * (255 - 107));
+    cg = 255;
+  } else {       // yellow -> red
+    const k = (r - 0.5) / 0.5;
+    cr = 255;
+    cg = Math.round(255 - k * 175);
+  }
+  return `rgb(${cr},${cg},90)`;
+}
+
+// HUD: hole name, strokes, par, and total vs par.
+function drawHUD() {
+  const lvl = currentLevel();
+  ctx.save();
+  ctx.font = '700 16px Orbitron, sans-serif';
+  ctx.textBaseline = 'top';
+
+  // left: hole name
+  ctx.fillStyle = '#00f5ff';
+  ctx.shadowColor = 'rgba(0,245,255,0.6)';
+  ctx.shadowBlur = 8;
+  ctx.textAlign = 'left';
+  ctx.fillText('HOLE ' + lvl.name, 24, 22);
+
+  // center: strokes / par
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#aeffc8';
+  ctx.fillText('STROKES ' + strokes + ' / PAR ' + lvl.par, W / 2, 22);
+
+  // right: total vs par so far
+  ctx.textAlign = 'right';
+  const vp = totalVsPar();
+  ctx.fillStyle = vp < 0 ? '#6bff9e' : vp > 0 ? '#ff7b7b' : '#ffd84d';
+  ctx.fillText('TOTAL ' + fmtVsPar(vp), W - 24, 22);
+  ctx.restore();
+}
+
+/* -------------------------------------------------------------------------
+   5. PHYSICS & COLLISIONS
+   ------------------------------------------------------------------------- */
+
+// Advance moving walls (always, so they animate even while the ball rests).
+function updateMovers() {
+  const lvl = currentLevel();
+  if (!lvl.movers) return;
+  for (const m of lvl.movers) {
+    if (m.baseX === undefined) { m.baseX = m.x; m.baseY = m.y; m.vx = 0; m.vy = 0; }
+    const px = m.x, py = m.y;
+    const offset = Math.sin(t * 0.02 * m.speed + m.phase) * (m.range / 2);
+    if (m.axis === 'y') { m.y = m.baseY + offset; }
+    else { m.x = m.baseX + offset; }
+    // per-frame velocity of the wall, used to shove the ball on contact
+    m.vx = m.x - px;
+    m.vy = m.y - py;
+  }
+}
+
+// Main physics integration for the ball.
+function updatePhysics() {
+  if (!ball.moving) return;
+  const lvl = currentLevel();
+
+  // apply slope forces while inside a slope zone
+  if (lvl.slopes) {
+    for (const s of lvl.slopes) {
+      if (pointInRect(ball.x, ball.y, s)) {
+        ball.vx += s.fx;
+        ball.vy += s.fy;
+      }
+    }
+  }
+
+  // friction (sand is stronger)
+  let friction = FRICTION;
+  if (lvl.sand) {
+    for (const s of lvl.sand) {
+      if (pointInRect(ball.x, ball.y, s)) { friction = SAND_FRICTION; break; }
+    }
+  }
+
+  // integrate
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+  ball.vx *= friction;
+  ball.vy *= friction;
+
+  checkCollisions();
+  checkWindmill();
+
+  // come to rest
+  const speed = Math.hypot(ball.vx, ball.vy);
+  if (speed < STOP_SPEED) {
+    ball.vx = 0; ball.vy = 0; ball.moving = false;
+  }
+
+  checkHole();
+}
+
+// Resolve ball-vs-rectangle collisions for every wall (static + moving).
+function checkCollisions() {
+  const lvl = currentLevel();
+  // Several passes over the static walls so a ball pushed out of one wall into
+  // another (e.g. a tight maze corner) gets fully resolved in the same frame.
+  // We stop early once a pass finds no overlaps. After push-out the ball sits
+  // exactly tangent to a wall, so it won't re-trigger that same wall next pass.
+  for (let pass = 0; pass < 3; pass++) {
+    let hit = false;
+    for (const w of lvl.walls) {
+      if (resolveCircleRect(w)) hit = true;
+    }
+    if (!hit) break;
+  }
+  // moving walls use a velocity-aware resolve so they can push the ball
+  if (lvl.movers) for (const m of lvl.movers) resolveMovingRect(m);
+}
+
+// AABB rectangle vs circle: push out along the collision normal and reflect
+// velocity on the correct axis with energy loss. Returns true if it collided.
+function resolveCircleRect(w) {
+  // closest point on the rectangle to the ball center
+  const cx = clamp(ball.x, w.x, w.x + w.w);
+  const cy = clamp(ball.y, w.y, w.y + w.h);
+  const dx = ball.x - cx;
+  const dy = ball.y - cy;
+  const distSq = dx * dx + dy * dy;
+
+  if (distSq >= BALL_R * BALL_R) return false; // no collision
+
+  // Case A: ball center is inside the rectangle -> push out least-penetration axis.
+  if (dx === 0 && dy === 0) {
+    const left   = ball.x - w.x;
+    const right  = w.x + w.w - ball.x;
+    const top    = ball.y - w.y;
+    const bottom = w.y + w.h - ball.y;
+    const minX = Math.min(left, right);
+    const minY = Math.min(top, bottom);
+    if (minX < minY) {
+      // push out along x; only reverse vx if it's heading further in
+      if (left < right) { ball.x -= (minX + BALL_R); if (ball.vx > 0) ball.vx = -ball.vx * BOUNCE; }
+      else              { ball.x += (minX + BALL_R); if (ball.vx < 0) ball.vx = -ball.vx * BOUNCE; }
+    } else {
+      if (top < bottom) { ball.y -= (minY + BALL_R); if (ball.vy > 0) ball.vy = -ball.vy * BOUNCE; }
+      else              { ball.y += (minY + BALL_R); if (ball.vy < 0) ball.vy = -ball.vy * BOUNCE; }
+    }
+    return true;
+  }
+
+  // Case B: outside -> normal points from closest edge point to ball center.
+  const dist = Math.sqrt(distSq);
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const overlap = BALL_R - dist;
+
+  // push the ball out of the wall
+  ball.x += nx * overlap;
+  ball.y += ny * overlap;
+
+  // Lose energy only on the component heading INTO the wall (the normal); keep
+  // the sliding (tangential) component so a glancing hit doesn't bleed speed.
+  // A head-on hit reverses at BOUNCE; a graze barely slows. Only apply when the
+  // ball is actually moving into the wall (vdot < 0).
+  const vdot = ball.vx * nx + ball.vy * ny;
+  if (vdot < 0) {
+    ball.vx -= (1 + BOUNCE) * vdot * nx;
+    ball.vy -= (1 + BOUNCE) * vdot * ny;
+  }
+  return true;
+}
+
+// Like resolveCircleRect, but accounts for the wall's own velocity so a gate
+// sliding into a (possibly resting) ball shoves it along instead of clipping.
+function resolveMovingRect(w) {
+  const cx = clamp(ball.x, w.x, w.x + w.w);
+  const cy = clamp(ball.y, w.y, w.y + w.h);
+  const dx = ball.x - cx;
+  const dy = ball.y - cy;
+  const distSq = dx * dx + dy * dy;
+  if (distSq >= BALL_R * BALL_R) return;
+
+  // work out the contact normal + how far to push the ball out
+  let nx, ny, overlap;
+  if (dx === 0 && dy === 0) {
+    const left = ball.x - w.x, right = w.x + w.w - ball.x;
+    const top = ball.y - w.y, bottom = w.y + w.h - ball.y;
+    const minX = Math.min(left, right), minY = Math.min(top, bottom);
+    if (minX < minY) { nx = (left < right) ? -1 : 1; ny = 0; overlap = minX + BALL_R; }
+    else             { nx = 0; ny = (top < bottom) ? -1 : 1; overlap = minY + BALL_R; }
+  } else {
+    const dist = Math.sqrt(distSq);
+    nx = dx / dist; ny = dy / dist; overlap = BALL_R - dist;
+  }
+
+  // push out, carried along by the wall so the ball can't be left inside it
+  ball.x += nx * overlap + (w.vx || 0);
+  ball.y += ny * overlap + (w.vy || 0);
+
+  // Bounce relative to the moving wall, damping only the normal component
+  // (preserves tangential speed), then add the wall velocity back so the gate
+  // shoves the ball along.
+  const wvx = w.vx || 0, wvy = w.vy || 0;
+  let rvx = ball.vx - wvx, rvy = ball.vy - wvy;
+  const vdot = rvx * nx + rvy * ny;
+  if (vdot < 0) {
+    rvx -= (1 + BOUNCE) * vdot * nx;
+    rvy -= (1 + BOUNCE) * vdot * ny;
+  }
+  ball.vx = rvx + wvx;
+  ball.vy = rvy + wvy;
+}
+
+// Windmill: the ball BOUNCES off the hub and the spinning blades (the blades
+// also swat it in their direction of travel). No more reset-to-start.
+function checkWindmill() {
+  const lvl = currentLevel();
+  if (!lvl.windmill) return;
+  const wm = lvl.windmill;
+  const angle = t * wm.speed;
+  const KICK = 3.2; // how hard a moving blade swats the ball
+
+  // hub: solid circle, simple bounce
+  const hd = Math.hypot(ball.x - wm.x, ball.y - wm.y) || 0.0001;
+  if (hd < wm.hub + BALL_R) {
+    const nx = (ball.x - wm.x) / hd, ny = (ball.y - wm.y) / hd;
+    ball.x = wm.x + nx * (wm.hub + BALL_R);
+    ball.y = wm.y + ny * (wm.hub + BALL_R);
+    const vdot = ball.vx * nx + ball.vy * ny;
+    if (vdot < 0) {
+      ball.vx -= (1 + BOUNCE) * vdot * nx;
+      ball.vy -= (1 + BOUNCE) * vdot * ny;
+    }
+    return;
+  }
+
+  // blades: 4 rotating segments from the hub outward
+  const reach = BALL_R + 5;
+  for (let i = 0; i < 4; i++) {
+    const a = angle + i * Math.PI / 2;
+    const sdx = Math.cos(a) * wm.blade, sdy = Math.sin(a) * wm.blade;
+    const l2 = sdx * sdx + sdy * sdy;
+    let u = ((ball.x - wm.x) * sdx + (ball.y - wm.y) * sdy) / l2;
+    u = clamp(u, 0, 1);
+    const qx = wm.x + u * sdx, qy = wm.y + u * sdy; // closest point on blade
+    let ddx = ball.x - qx, ddy = ball.y - qy;
+    const d = Math.hypot(ddx, ddy) || 0.0001;
+    if (d < reach) {
+      const nx = ddx / d, ny = ddy / d;
+      ball.x += nx * (reach - d);
+      ball.y += ny * (reach - d);
+      // velocity of the blade surface at the contact point (rotation)
+      const bvx = -wm.speed * (qy - wm.y) * KICK;
+      const bvy =  wm.speed * (qx - wm.x) * KICK;
+      // bounce relative to the moving blade, then add the blade's velocity
+      let rvx = ball.vx - bvx, rvy = ball.vy - bvy;
+      const vdot = rvx * nx + rvy * ny;
+      if (vdot < 0) {
+        rvx -= (1 + BOUNCE) * vdot * nx;
+        rvy -= (1 + BOUNCE) * vdot * ny;
+      }
+      ball.vx = rvx + bvx;
+      ball.vy = rvy + bvy;
+      return;
+    }
+  }
+}
+
+// Drop into the cup if close and slow enough.
+function checkHole() {
+  const h = currentLevel().hole;
+  const d = Math.hypot(ball.x - h.x, ball.y - h.y);
+  const speed = Math.hypot(ball.vx, ball.vy);
+  if (d < HOLE_GRAB_DIST && speed < HOLE_MAX_SPEED) {
+    sinkBall();
+  }
+}
+
+/* -------------------------------------------------------------------------
+   6. GAME FLOW
+   ------------------------------------------------------------------------- */
+function sinkBall() {
+  ball.moving = false;
+  ball.vx = 0; ball.vy = 0;
+  scores[levelIndex] = strokes;
+  showStarScreen();
+}
+
+// Called when the stroke cap is reached without sinking.
+function maxOut() {
+  ball.moving = false;
+  ball.vx = 0; ball.vy = 0;
+  maxedOut = true;
+  scores[levelIndex] = MAX_STROKES;
+  showStarScreen();
+}
+
+function shoot(power, angle) {
+  strokes++;                              // count immediately on each shot
+  ball.vx = Math.cos(angle) * power;
+  ball.vy = Math.sin(angle) * power;
+  ball.moving = true;
+}
+
+// Stars: 3 = hole in one, 2 = under par, 1 = par, 0 = over par.
+function starsFor(stroke, par) {
+  if (stroke === 1) return 3;
+  if (stroke < par) return 2;
+  if (stroke === par) return 1;
+  return 0;
+}
+
+function rankText(stars) {
+  if (maxedOut) return 'MAX STROKES REACHED';
+  if (stars === 3) return 'HOLE IN ONE!';
+  if (stars === 2) return 'UNDER PAR';
+  if (stars === 1) return 'PAR';
+  return 'OVER PAR';
+}
+
+function showStarScreen() {
+  state = 'star';
+  const lvl = currentLevel();
+  const stroke = scores[levelIndex];
+  const stars = maxedOut ? 0 : starsFor(stroke, lvl.par);
+
+  document.getElementById('starHoleName').textContent =
+    'Hole ' + lvl.name.split('·')[0].trim() + ' Complete';
+  let row = '';
+  for (let i = 0; i < 3; i++) {
+    row += `<span class="${i < stars ? 'star-on' : 'star-off'}">★</span>`;
+  }
+  document.getElementById('starRow').innerHTML = row;
+  document.getElementById('rankLabel').textContent = rankText(stars);
+
+  const diff = stroke - lvl.par;
+  document.getElementById('starScoreLine').innerHTML =
+    `Strokes: <b>${stroke}</b> &nbsp; Par: <b>${lvl.par}</b> &nbsp; (${fmtVsPar(diff)})`;
+
+  document.getElementById('nextBtn').textContent =
+    (levelIndex >= LEVELS.length - 1) ? 'VIEW SCORECARD' : 'NEXT HOLE';
+  document.getElementById('starScreen').classList.remove('hidden');
+}
+
+function nextHole() {
+  document.getElementById('starScreen').classList.add('hidden');
+  if (levelIndex >= LEVELS.length - 1) {
+    showScorecard();
+  } else {
+    levelIndex++;
+    loadLevel(levelIndex);
+    state = 'playing';
+  }
+}
+
+function showScorecard() {
+  state = 'card';
+  let totalStrokes = 0, totalPar = 0;
+  let rows = `<tr><th class="name-col">Hole</th><th>Strokes</th><th>Par</th><th>+/&minus;</th></tr>`;
+  for (let i = 0; i < LEVELS.length; i++) {
+    const lvl = LEVELS[i];
+    const s = scores[i];
+    totalStrokes += s;
+    totalPar += lvl.par;
+    const diff = s - lvl.par;
+    const cls = diff < 0 ? 'under' : diff > 0 ? 'over' : 'even';
+    rows += `<tr>
+      <td class="name-col">${lvl.name}</td>
+      <td>${s}</td>
+      <td>${lvl.par}</td>
+      <td class="${cls}">${fmtVsPar(diff)}</td>
+    </tr>`;
+  }
+  const totDiff = totalStrokes - totalPar;
+  const totCls = totDiff < 0 ? 'under' : totDiff > 0 ? 'over' : 'even';
+  rows += `<tr class="total-row">
+    <td class="name-col">TOTAL</td>
+    <td>${totalStrokes}</td>
+    <td>${totalPar}</td>
+    <td class="${totCls}">${fmtVsPar(totDiff)}</td>
+  </tr>`;
+  document.getElementById('scoreTable').innerHTML = rows;
+  document.getElementById('cardScreen').classList.remove('hidden');
+}
+
+function startGame() {
+  document.getElementById('titleScreen').classList.add('hidden');
+  document.getElementById('cardScreen').classList.add('hidden');
+  scores = [];
+  levelIndex = 0;
+  loadLevel(0);
+  state = 'playing';
+}
+
+/* -------------------------------------------------------------------------
+   7. SCORING HELPERS
+   ------------------------------------------------------------------------- */
+function totalVsPar() {
+  let diff = 0;
+  for (let i = 0; i < scores.length; i++) {
+    if (scores[i] !== undefined) diff += scores[i] - LEVELS[i].par;
+  }
+  return diff;
+}
+function fmtVsPar(d) {
+  if (d === 0) return 'E';
+  return d > 0 ? '+' + d : '' + d;
+}
+
+/* -------------------------------------------------------------------------
+   8. INPUT HANDLING (click-drag slingshot from the ball)
+   ------------------------------------------------------------------------- */
+function canvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  const py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  return { x: px * (W / rect.width), y: py * (H / rect.height) };
+}
+
+function onDown(e) {
+  if (state !== 'playing' || ball.moving) return;
+  const p = canvasPos(e);
+  // must start the drag near the ball
+  if (Math.hypot(p.x - ball.x, p.y - ball.y) > BALL_R + 22) return;
+  aiming = true;
+  aimStart = { x: ball.x, y: ball.y };
+  aimNow = p;
+  e.preventDefault();
+}
+
+function onMove(e) {
+  if (!aiming) return;
+  aimNow = canvasPos(e);
+  e.preventDefault();
+}
+
+function onUp(e) {
+  if (!aiming) return;
+  aiming = false;
+  const dx = aimStart.x - aimNow.x;
+  const dy = aimStart.y - aimNow.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 6) return; // too small, ignore
+  const power = Math.min(dist * POWER_SCALE, MAX_POWER);
+  const angle = Math.atan2(dy, dx);
+  shoot(power, angle);
+}
+
+canvas.addEventListener('mousedown', onDown);
+window.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', onDown, { passive: false });
+window.addEventListener('touchmove', onMove, { passive: false });
+window.addEventListener('touchend', onUp);
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('nextBtn').addEventListener('click', nextHole);
+document.getElementById('againBtn').addEventListener('click', startGame);
+
+/* -------------------------------------------------------------------------
+   9. GEOMETRY HELPERS
+   ------------------------------------------------------------------------- */
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function pointInRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+function roundRect(x, y, w, h, r, c) {
+  c = c || ctx; // defaults to the main context; pass a context to draw offscreen
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let tt = ((px - x1) * dx + (py - y1) * dy) / l2;
+  tt = clamp(tt, 0, 1);
+  const cx = x1 + tt * dx, cy = y1 + tt * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+/* -------------------------------------------------------------------------
+   10. GAME LOOP
+   ------------------------------------------------------------------------- */
+function loop() {
+  t++;
+
+  // Always draw the scene so menus sit over a live board.
+  drawBoard();
+
+  if (state !== 'title' && state !== 'card') {
+    drawTraps();
+    updateMovers();
+    drawWalls();
+    drawSlopeArrows(); // on top of walls + sand so the push is always visible
+    drawWindmill();
+    drawHole();
+
+    if (state === 'playing') {
+      updatePhysics();
+      // enforce the stroke cap once the ball has stopped
+      if (!ball.moving && strokes >= MAX_STROKES && scores[levelIndex] === undefined) {
+        maxOut();
+      }
+    }
+
+    drawAimLine();
+    drawBall();
+    drawHUD();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// Kick things off.
+prerenderBoard(); // build the cached background + turf once
+loadLevel(0);
+loop();
+</script>
+</body>
+</html>

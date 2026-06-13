@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Midnight Mini Golf</title>
+  <meta name="description" content="A neon mini golf game set on a midnight island. 9 holes. Traps, slopes, windmills. Play free in your browser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ─── Reset & base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a1a;
+      --bg2:       #0f0f28;
+      --cyan:      #00f5ff;
+      --green:     #39ff14;
+      --white:     #ffffff;
+      --muted:     #7a8fa6;
+      --border:    rgba(0, 245, 255, 0.15);
+      --glow-cyan: 0 0 18px rgba(0,245,255,0.55);
+      --glow-green:0 0 18px rgba(57,255,20,0.55);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--white);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Star field ────────────────────────────────────────── */
+    #stars {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Nav ───────────────────────────────────────────────── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 40px;
+      background: rgba(10,10,26,0.75);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--cyan);
+      text-shadow: var(--glow-cyan);
+      letter-spacing: 0.08em;
+      text-decoration: none;
+    }
+
+    .nav-play {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--bg);
+      background: var(--cyan);
+      border: none;
+      border-radius: 6px;
+      padding: 8px 20px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity 0.15s, box-shadow 0.15s;
+      box-shadow: var(--glow-cyan);
+    }
+    .nav-play:hover { opacity: 0.85; }
+
+    /* ─── Hero ──────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+      gap: 0;
+    }
+
+    .hero-eyebrow {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--green);
+      text-shadow: var(--glow-green);
+      margin-bottom: 20px;
+    }
+
+    .hero-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(36px, 7vw, 80px);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.01em;
+      margin-bottom: 24px;
+    }
+
+    .hero-title .line-midnight { color: var(--white); }
+    .hero-title .line-mini {
+      color: var(--cyan);
+      text-shadow: var(--glow-cyan);
+    }
+    .hero-title .line-golf { color: var(--white); }
+
+    .hero-sub {
+      font-size: clamp(15px, 2vw, 18px);
+      color: var(--muted);
+      max-width: 480px;
+      line-height: 1.65;
+      margin-bottom: 40px;
+    }
+
+    /* ─── Live preview canvas ───────────────────────────────── */
+    .preview-wrap {
+      position: relative;
+      margin-bottom: 44px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1.5px solid var(--border);
+      box-shadow: 0 0 40px rgba(0,245,255,0.12), 0 24px 60px rgba(0,0,0,0.6);
+    }
+
+    #preview {
+      display: block;
+      width: min(560px, calc(100vw - 48px));
+      height: auto;
+      aspect-ratio: 560/200;
+    }
+
+    .preview-label {
+      position: absolute;
+      bottom: 10px;
+      right: 14px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ─── CTA button ────────────────────────────────────────── */
+    .cta-btn {
+      display: inline-block;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--bg);
+      background: var(--cyan);
+      border: none;
+      border-radius: 8px;
+      padding: 18px 52px;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: var(--glow-cyan), 0 8px 32px rgba(0,245,255,0.3);
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+      position: relative;
+    }
+    .cta-btn::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 10px;
+      border: 1px solid rgba(0,245,255,0.3);
+      pointer-events: none;
+    }
+    .cta-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 28px rgba(0,245,255,0.8), 0 12px 40px rgba(0,245,255,0.35);
+    }
+    .cta-btn:active { transform: translateY(0); }
+
+    .cta-note {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ─── Features strip ────────────────────────────────────── */
+    .features {
+      position: relative;
+      z-index: 1;
+      padding: 80px 24px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .features-label {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 48px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .feature-card:hover {
+      border-color: rgba(0,245,255,0.4);
+      box-shadow: 0 0 20px rgba(0,245,255,0.08);
+    }
+
+    .feature-icon {
+      font-size: 28px;
+      margin-bottom: 14px;
+      display: block;
+      line-height: 1;
+    }
+
+    .feature-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .feature-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ─── Holes preview strip ───────────────────────────────── */
+    .holes-section {
+      position: relative;
+      z-index: 1;
+      padding: 0 24px 80px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .holes-label {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 32px;
+    }
+
+    .holes-grid {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      gap: 8px;
+    }
+
+    .hole-pip {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+
+    .hole-num {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+      margin-bottom: 4px;
+    }
+
+    .hole-par {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .hole-diff {
+      margin-top: 6px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .diff-easy   { background: var(--green); box-shadow: var(--glow-green); }
+    .diff-medium { background: #ffb800; box-shadow: 0 0 8px rgba(255,184,0,0.5); }
+    .diff-hard   { background: #ff3c3c; box-shadow: 0 0 8px rgba(255,60,60,0.5); }
+
+    /* ─── Bottom CTA ────────────────────────────────────────── */
+    .bottom-cta {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 0 24px 100px;
+    }
+
+    .bottom-cta-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(22px, 4vw, 36px);
+      font-weight: 900;
+      color: var(--white);
+      margin-bottom: 16px;
+    }
+
+    .bottom-cta-sub {
+      font-size: 15px;
+      color: var(--muted);
+      margin-bottom: 36px;
+    }
+
+    /* ─── Footer ────────────────────────────────────────────── */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cyan);
+      text-shadow: var(--glow-cyan);
+      letter-spacing: 0.08em;
+    }
+
+    .footer-note {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ─── Divider line ──────────────────────────────────────── */
+    .divider {
+      width: 60px;
+      height: 1px;
+      background: var(--border);
+      margin: 0 auto 48px;
+    }
+
+    /* ─── Reduced motion ────────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+
+    /* ─── Mobile ────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      nav { padding: 16px 20px; }
+      .holes-grid { grid-template-columns: repeat(3, 1fr); }
+      footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Star field canvas -->
+  <canvas id="stars"></canvas>
+
+  <!-- Nav -->
+  <nav>
+    <a href="#" class="nav-logo">MMG</a>
+    <a href="golf.html" class="nav-play">Play now</a>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <p class="hero-eyebrow">9 holes · Free · No download</p>
+
+    <h1 class="hero-title">
+      <span class="line-midnight">Midnight</span><br>
+      <span class="line-mini">Mini</span><br>
+      <span class="line-golf">Golf</span>
+    </h1>
+
+    <p class="hero-sub">
+      Neon fairways. Island nights. Navigate sand traps, dodge windmills,
+      and survive moving walls across 9 increasingly brutal holes.
+    </p>
+
+    <!-- Live animated preview -->
+    <div class="preview-wrap">
+      <canvas id="preview"></canvas>
+      <span class="preview-label">Live preview</span>
+    </div>
+
+    <a href="golf.html" class="cta-btn">Tee off</a>
+    <p class="cta-note">Plays in your browser — no account needed</p>
+  </section>
+
+  <!-- Features -->
+  <section class="features">
+    <p class="features-label">What you're getting into</p>
+    <div class="divider"></div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon">⛳</span>
+        <p class="feature-title">9 holes</p>
+        <p class="feature-desc">From a casual straight shot to a full gauntlet. Par ranges from 2 to 5.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">💨</span>
+        <p class="feature-title">Slopes</p>
+        <p class="feature-desc">Gravity zones push your ball off course. Hit uphill with power to spare.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🏖️</span>
+        <p class="feature-title">Sand traps</p>
+        <p class="feature-desc">Land in the sand and watch your ball grind to a halt. Aim around them.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🌀</span>
+        <p class="feature-title">Windmill</p>
+        <p class="feature-desc">Rotating blades that send your ball back to the tee. Timing is everything.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🚧</span>
+        <p class="feature-title">Moving walls</p>
+        <p class="feature-desc">Sliding obstacles that open and close. Wait for the gap or pay the price.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">⭐</span>
+        <p class="feature-title">Star ratings</p>
+        <p class="feature-desc">Hole in one? Three stars. Over par? Zero. Chase the perfect round.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Holes strip -->
+  <section class="holes-section">
+    <p class="holes-label">The course</p>
+    <div class="divider"></div>
+    <div class="holes-grid">
+      <div class="hole-pip">
+        <p class="hole-num">01</p>
+        <p class="hole-par">Par 2</p>
+        <div class="hole-diff diff-easy"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">02</p>
+        <p class="hole-par">Par 3</p>
+        <div class="hole-diff diff-easy"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">03</p>
+        <p class="hole-par">Par 3</p>
+        <div class="hole-diff diff-easy"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">04</p>
+        <p class="hole-par">Par 4</p>
+        <div class="hole-diff diff-medium"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">05</p>
+        <p class="hole-par">Par 4</p>
+        <div class="hole-diff diff-medium"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">06</p>
+        <p class="hole-par">Par 4</p>
+        <div class="hole-diff diff-medium"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">07</p>
+        <p class="hole-par">Par 4</p>
+        <div class="hole-diff diff-hard"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">08</p>
+        <p class="hole-par">Par 5</p>
+        <div class="hole-diff diff-hard"></div>
+      </div>
+      <div class="hole-pip">
+        <p class="hole-num">09</p>
+        <p class="hole-par">Par 5</p>
+        <div class="hole-diff diff-hard"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom CTA -->
+  <section class="bottom-cta">
+    <h2 class="bottom-cta-title">Ready to play?</h2>
+    <p class="bottom-cta-sub">Free. No login. Works on any browser.</p>
+    <a href="golf.html" class="cta-btn">Start on hole 1</a>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <span class="footer-logo">Midnight Mini Golf</span>
+    <span class="footer-note">Built with HTML, CSS &amp; JavaScript</span>
+  </footer>
+
+  <script>
+    // ─── Star field ────────────────────────────────────────────
+    (function () {
+      const c = document.getElementById('stars');
+      const ctx = c.getContext('2d');
+      let stars = [];
+
+      function resize() {
+        c.width  = window.innerWidth;
+        c.height = window.innerHeight;
+        stars = Array.from({ length: 180 }, () => ({
+          x: Math.random() * c.width,
+          y: Math.random() * c.height,
+          r: Math.random() * 1.2 + 0.3,
+          o: Math.random() * 0.6 + 0.2,
+          sp: Math.random() * 0.008 + 0.003,
+          phase: Math.random() * Math.PI * 2
+        }));
+      }
+
+      function draw(t) {
+        ctx.clearRect(0, 0, c.width, c.height);
+        stars.forEach(s => {
+          const opacity = s.o + Math.sin(t * s.sp + s.phase) * 0.15;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${opacity})`;
+          ctx.fill();
+        });
+        requestAnimationFrame(draw);
+      }
+
+      window.addEventListener('resize', resize);
+      resize();
+      requestAnimationFrame(draw);
+    })();
+
+    // ─── Hero preview — animated mini golf demo ────────────────
+    (function () {
+      const canvas = document.getElementById('preview');
+      const ctx    = canvas.getContext('2d');
+
+      // Responsive canvas size
+      function setSize() {
+        const w = Math.min(560, window.innerWidth - 48);
+        canvas.width  = w;
+        canvas.height = Math.round(w * (200 / 560));
+      }
+      setSize();
+      window.addEventListener('resize', setSize);
+
+      // Course definition — scaled to canvas dimensions
+      function getW() { return canvas.width; }
+      function getH() { return canvas.height; }
+
+      // Ball state
+      let ball = { x: 0, y: 0, vx: 0, vy: 0, r: 0 };
+      let holeX = 0, holeY = 0;
+      let bounceCount = 0;
+
+      function reset() {
+        const w = getW(), h = getH();
+        ball.r  = w * 0.016;
+        ball.x  = w * 0.1;
+        ball.y  = h * 0.5;
+        ball.vx = w * 0.004;
+        ball.vy = -(h * 0.006);
+        holeX   = w * 0.88;
+        holeY   = h * 0.5;
+        bounceCount = 0;
+      }
+      reset();
+
+      // Walls — proportional
+      function walls() {
+        const w = getW(), h = getH();
+        return [
+          // border
+          { x: w*0.04, y: h*0.1,  width: w*0.92, height: h*0.06 },
+          { x: w*0.04, y: h*0.84, width: w*0.92, height: h*0.06 },
+          { x: w*0.04, y: h*0.1,  width: w*0.03, height: h*0.80 },
+          { x: w*0.93, y: h*0.1,  width: w*0.03, height: h*0.80 },
+          // internal bumper
+          { x: w*0.38, y: h*0.3,  width: w*0.03, height: h*0.22 },
+          { x: w*0.58, y: h*0.48, width: w*0.03, height: h*0.22 },
+        ];
+      }
+
+      function drawScene() {
+        const w = getW(), h = getH();
+        const ws = walls();
+
+        // Background
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, w, h);
+
+        // Turf
+        ctx.fillStyle = '#0f3d1a';
+        ctx.fillRect(w*0.07, h*0.16, w*0.86, h*0.68);
+
+        // Turf grid lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 1;
+        for (let x = w*0.07; x < w*0.93; x += w*0.06) {
+          ctx.beginPath(); ctx.moveTo(x, h*0.16); ctx.lineTo(x, h*0.84); ctx.stroke();
+        }
+        for (let y = h*0.16; y < h*0.84; y += h*0.12) {
+          ctx.beginPath(); ctx.moveTo(w*0.07, y); ctx.lineTo(w*0.93, y); ctx.stroke();
+        }
+
+        // Walls
+        ws.forEach(wall => {
+          ctx.shadowColor = '#00f5ff';
+          ctx.shadowBlur  = 8;
+          ctx.fillStyle   = '#00f5ff';
+          ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+          ctx.shadowBlur  = 0;
+        });
+
+        // Hole
+        ctx.beginPath();
+        ctx.arc(holeX, holeY, w*0.018, 0, Math.PI*2);
+        ctx.fillStyle = '#050505';
+        ctx.fill();
+        ctx.shadowColor = '#39ff14';
+        ctx.shadowBlur  = 10;
+        ctx.strokeStyle = '#39ff14';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+        ctx.shadowBlur  = 0;
+
+        // Flag
+        ctx.strokeStyle = '#ff3333';
+        ctx.lineWidth   = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(holeX, holeY - w*0.018);
+        ctx.lineTo(holeX, holeY - w*0.07);
+        ctx.stroke();
+        ctx.fillStyle = '#ff3333';
+        ctx.beginPath();
+        ctx.moveTo(holeX,          holeY - w*0.07);
+        ctx.lineTo(holeX + w*0.04, holeY - w*0.055);
+        ctx.lineTo(holeX,          holeY - w*0.04);
+        ctx.fill();
+
+        // Ball
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur  = 10;
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      function rectCircleCollide(rx, ry, rw, rh, cx, cy, cr) {
+        const nearX = Math.max(rx, Math.min(cx, rx + rw));
+        const nearY = Math.max(ry, Math.min(cy, ry + rh));
+        const dx = cx - nearX, dy = cy - nearY;
+        return dx*dx + dy*dy < cr*cr;
+      }
+
+      function update() {
+        const w = getW(), h = getH();
+        const ws = walls();
+
+        ball.vx *= 0.995;
+        ball.vy *= 0.995;
+        ball.x  += ball.vx;
+        ball.y  += ball.vy;
+
+        // Wall collisions
+        ws.forEach(wall => {
+          if (rectCircleCollide(wall.x, wall.y, wall.width, wall.height, ball.x, ball.y, ball.r)) {
+            const fromLeft  = (ball.x - ball.r) - (wall.x + wall.width);
+            const fromRight = wall.x - (ball.x + ball.r);
+            const fromTop   = (ball.y - ball.r) - (wall.y + wall.height);
+            const fromBot   = wall.y - (ball.y + ball.r);
+            const minH = Math.min(Math.abs(fromLeft), Math.abs(fromRight));
+            const minV = Math.min(Math.abs(fromTop),  Math.abs(fromBot));
+            if (minH < minV) {
+              ball.vx *= -0.7;
+              ball.x  += fromLeft < fromRight ? fromLeft : -fromRight;
+            } else {
+              ball.vy *= -0.7;
+              ball.y  += fromTop < fromBot ? fromTop : -fromBot;
+            }
+            bounceCount++;
+          }
+        });
+
+        // Hole reached — reset with a new angle
+        const dx = ball.x - holeX, dy = ball.y - holeY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < w*0.025 || ball.x < w*0.04 || ball.x > w*0.96 || bounceCount > 30) {
+          reset();
+          // Vary direction each loop
+          const angle = Math.random() * Math.PI * 0.5 - Math.PI * 0.1;
+          ball.vx =  Math.cos(angle) * w * 0.004;
+          ball.vy = -Math.sin(angle) * h * 0.006;
+        }
+      }
+
+      function loop() {
+        update();
+        drawScene();
+        requestAnimationFrame(loop);
+      }
+      loop();
+    })();
+  </script>
+</body>
+</html>
