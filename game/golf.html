@@ -22,10 +22,12 @@
   }
 
   /* ===== Game shell ===== */
+  /* Fixed internal layout (700x420); JS scales it down to fit small screens. */
   #shell {
     position: relative;
     width: 700px;
     height: 420px;
+    transform-origin: center center;
     border-radius: 14px;
     box-shadow:
       0 0 0 2px rgba(0, 245, 255, 0.25),
@@ -1305,6 +1307,24 @@ canvas.addEventListener('touchcancel', onUp,  { passive: false });
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('nextBtn').addEventListener('click', nextHole);
 document.getElementById('againBtn').addEventListener('click', startGame);
+
+// --- Fit the 700x420 shell into the viewport (phones, tablets, landscape) ---
+// Scales the whole shell uniformly so the board, overlays and text all stay on
+// screen. Never upscales past 1. getBoundingClientRect() reflects the transform,
+// so canvasPos() keeps mapping touches/clicks correctly.
+const shell = document.getElementById('shell');
+function fitShell() {
+  const margin = 12; // breathing room from the screen edges
+  const scale = Math.min(
+    (window.innerWidth  - margin) / 700,
+    (window.innerHeight - margin) / 420,
+    1
+  );
+  shell.style.transform = 'scale(' + scale + ')';
+}
+fitShell();
+window.addEventListener('resize', fitShell);
+window.addEventListener('orientationchange', fitShell);
 
 /* -------------------------------------------------------------------------
    9. GEOMETRY HELPERS
