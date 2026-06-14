@@ -209,6 +209,36 @@
 
   /* row to sit two neon buttons side by side (scorecard actions) */
   .btn-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+
+  /* ===== Sound on/off button (top-right of the HUD) ===== */
+  .mute-btn {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 20;                 /* above the overlays so it's always reachable */
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: rgba(6, 8, 22, 0.72);
+    border: 1px solid rgba(0, 245, 255, 0.35);
+    border-radius: 8px;
+    color: #00f5ff;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+  }
+  .mute-btn:hover {
+    border-color: #00f5ff;
+    box-shadow: 0 0 12px rgba(0, 245, 255, 0.5);
+  }
+  .mute-btn:active { transform: scale(0.95); }
+  .mute-btn svg { width: 18px; height: 18px; display: block; }
+  .mute-btn.muted {
+    color: #7a8fa6;             /* dimmed when muted */
+    border-color: rgba(122, 143, 166, 0.4);
+  }
 </style>
 </head>
 <body>
@@ -217,6 +247,9 @@
 
   <!-- Mobile-only aiming hint; revealed on touch devices, hidden after first shot -->
   <div id="touchHint" class="touch-hint hidden">Tap &amp; drag from the ball to aim</div>
+
+  <!-- Sound on/off (Web Audio); always reachable, persists via localStorage -->
+  <button id="muteBtn" class="mute-btn" type="button" aria-label="Mute"></button>
 
   <!-- Title screen -->
   <div id="titleScreen" class="overlay">
@@ -1111,7 +1144,7 @@ function drawHUD() {
   ctx.textAlign = 'right';
   const vp = totalVsPar();
   ctx.fillStyle = vp < 0 ? '#6bff9e' : vp > 0 ? '#ff7b7b' : '#ffd84d';
-  ctx.fillText('TOTAL ' + fmtVsPar(vp), W - 24, 22);
+  ctx.fillText('TOTAL ' + fmtVsPar(vp), W - 56, 22); // leave room for the mute button
   ctx.restore();
 }
 
@@ -1360,6 +1393,7 @@ function sinkBall() {
   ball.moving = false;
   ball.vx = 0; ball.vy = 0;
   scores[levelIndex] = strokes;
+  playHoleSound();                        // celebratory chime before the overlay
   showStarScreen();
 }
 
@@ -1377,6 +1411,7 @@ function shoot(power, angle) {
   ball.vx = Math.cos(angle) * power;
   ball.vy = Math.sin(angle) * power;
   ball.moving = true;
+  playShotSound(power);                   // punchy hit, scaled by power
 }
 
 // Stars: 3 = hole in one, 2 = under par, 1 = par, 0 = over par.
@@ -1546,6 +1581,144 @@ function fmtVsPar(d) {
 }
 
 /* -------------------------------------------------------------------------
+   7b. AUDIO — procedural sound effects via the Web Audio API
+   Every sound is synthesised live from oscillators (no files, nothing to
+   download). The AudioContext is created lazily on the first user gesture to
+   satisfy browser autoplay policies, and a single master gain lets the mute
+   button silence everything at once. Mute state persists in localStorage.
+   ------------------------------------------------------------------------- */
+let audioCtx   = null;   // created on first interaction
+let masterGain = null;   // master volume / mute bus
+let muted      = false;  // persisted across holes (and reloads) via localStorage
+
+// Rolling-sound nodes: one long-lived oscillator whose gain tracks ball speed.
+let rollOsc = null, rollGain = null, rollFilter = null;
+
+// Restore persisted mute state (best-effort; ignore storage errors).
+try { muted = localStorage.getItem('mmg_muted') === '1'; } catch (e) {}
+
+// Create the AudioContext + master bus on demand, resuming it if suspended.
+// Safe to call on every gesture.
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;                 // browser has no Web Audio support
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : 1;
+    masterGain.connect(audioCtx.destination);
+    initRollingSound();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// Build the persistent rolling-sound chain once: sawtooth -> lowpass -> gain.
+// It runs continuously at gain 0; we only modulate the gain, which avoids the
+// clicks you'd get from starting/stopping an oscillator on every roll.
+function initRollingSound() {
+  rollOsc = audioCtx.createOscillator();
+  rollOsc.type = 'sawtooth';
+  rollOsc.frequency.value = 55;
+  rollFilter = audioCtx.createBiquadFilter();
+  rollFilter.type = 'lowpass';
+  rollFilter.frequency.value = 200;
+  rollGain = audioCtx.createGain();
+  rollGain.gain.value = 0;                // silent until the ball moves
+  rollOsc.connect(rollFilter);
+  rollFilter.connect(rollGain);
+  rollGain.connect(masterGain);
+  rollOsc.start();
+}
+
+// 1) SHOT — a short punchy "thud + click". Harder shots are higher and louder.
+function playShotSound(power) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  const ratio = Math.max(0, Math.min(1, power / MAX_POWER));
+  const freq = 150 + ratio * 180;         // pitch scales with power
+  const vol  = 0.18 + ratio * 0.22;       // volume scales with power
+
+  // body: low triangle that drops in pitch for the "thud"
+  const osc = audioCtx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq, t0);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t0 + 0.12);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.006);    // fast attack
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);  // quick decay
+  osc.connect(g); g.connect(masterGain);
+  osc.start(t0); osc.stop(t0 + 0.16);
+
+  // click: a brief high square gives the hit its snap
+  const click = audioCtx.createOscillator();
+  click.type = 'square';
+  click.frequency.setValueAtTime(freq * 2.2, t0);
+  const cg = audioCtx.createGain();
+  cg.gain.setValueAtTime(vol * 0.5, t0);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+  click.connect(cg); cg.connect(masterGain);
+  click.start(t0); click.stop(t0 + 0.06);
+}
+
+// 2) ROLLING — call every frame with the ball's speed (pass 0 when stopped).
+// Loudness + brightness rise with speed and fade smoothly to silence at rest,
+// so there's no lingering tone or glitch when the ball halts or a hole resets.
+function updateRollingSound(speed) {
+  if (!audioCtx || !rollGain) return;
+  const t = audioCtx.currentTime;
+  const ROLL_MIN = 0.5;                    // below this, treat the ball as still
+  if (speed > ROLL_MIN) {
+    const ratio  = Math.min(speed / 14, 1);
+    const target = 0.05 + ratio * 0.11;    // subtle hum, louder when fast
+    rollGain.gain.setTargetAtTime(target, t, 0.05);
+    rollFilter.frequency.setTargetAtTime(150 + ratio * 280, t, 0.05);
+  } else {
+    rollGain.gain.setTargetAtTime(0, t, 0.04); // smooth, click-free fade-out
+  }
+}
+
+// 3) HOLE — three ascending notes (a little major-triad chime) on a sink.
+function playHoleSound() {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+  notes.forEach((f, i) => {
+    const start = t0 + i * 0.12;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.26, start + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(start); osc.stop(start + 0.4);
+  });
+}
+
+// Flip the master bus and persist the choice; called by the mute button.
+function setMuted(m) {
+  muted = m;
+  if (masterGain) {
+    masterGain.gain.setTargetAtTime(muted ? 0 : 1, audioCtx.currentTime, 0.01);
+  }
+  try { localStorage.setItem('mmg_muted', muted ? '1' : '0'); } catch (e) {}
+  updateMuteIcon();
+}
+
+const SPEAKER_ON  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" stroke="none"/><path d="M16 8.5a4 4 0 0 1 0 7"/><path d="M18.7 6a7 7 0 0 1 0 12"/></svg>';
+const SPEAKER_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="21" y2="14"/><line x1="21" y1="9" x2="16" y2="14"/></svg>';
+function updateMuteIcon() {
+  const btn = document.getElementById('muteBtn');
+  if (!btn) return;
+  btn.innerHTML = muted ? SPEAKER_OFF : SPEAKER_ON;
+  btn.classList.toggle('muted', muted);
+  btn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+}
+
+/* -------------------------------------------------------------------------
    8. INPUT HANDLING (click-drag slingshot from the ball)
    ------------------------------------------------------------------------- */
 // True for touch events; lets us pick the right coord source + grab radius.
@@ -1626,6 +1799,15 @@ document.getElementById('holeGrid').addEventListener('click', e => {
   if (btn) selectHole(parseInt(btn.dataset.i, 10));
 });
 
+// Audio: spin up (or resume) the AudioContext on the first user gesture, and
+// wire the mute button. Reflect any persisted mute state on load.
+window.addEventListener('pointerdown', ensureAudio);
+document.getElementById('muteBtn').addEventListener('click', () => {
+  ensureAudio();
+  setMuted(!muted);
+});
+updateMuteIcon();
+
 // --- Fit the 700x420 shell into the viewport (phones, tablets, landscape) ---
 // Scales the whole shell uniformly so the board, overlays and text all stay on
 // screen. Never upscales past 1. getBoundingClientRect() reflects the transform,
@@ -1701,6 +1883,12 @@ function loop() {
     drawBall();
     drawHUD();
   }
+
+  // Rolling sound follows the ball's speed; it's silent unless a shot is in
+  // motion, so it fades out cleanly at rest and on hole changes/resets.
+  const rollSpeed = (state === 'playing' && ball.moving)
+    ? Math.hypot(ball.vx, ball.vy) : 0;
+  updateRollingSound(rollSpeed);
 
   requestAnimationFrame(loop);
 }
