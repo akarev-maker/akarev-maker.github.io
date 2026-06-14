@@ -706,8 +706,8 @@ let t = 0;                 // global animation time (frames)
 let maxedOut = false;      // true if last hole ended on stroke cap
 
 // --- Touch / mobile input ---
-// Coarse pointers (phones/tablets) get a larger tap target around the ball and
-// an on-screen aiming hint that goes away once the player takes their first shot.
+// Coarse pointers (phones/tablets) get an on-screen aiming hint that goes away
+// once the player takes their first shot.
 const isTouchDevice =
   (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
   ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -1546,7 +1546,7 @@ function selectHole(i) {
   }
 }
 
-// Full 18-hole round from hole 1 (used by START flow's hole 1 and PLAY AGAIN).
+// Full 18-hole round from hole 1 (used by PLAY ALL 18 and PLAY AGAIN).
 function startGame() {
   hideScreens();
   scores = [];
@@ -1714,9 +1714,9 @@ function updateMuteIcon() {
 }
 
 /* -------------------------------------------------------------------------
-   8. INPUT HANDLING (click-drag slingshot from the ball)
+   8. INPUT HANDLING (drag-anywhere slingshot)
    ------------------------------------------------------------------------- */
-// True for touch events; lets us pick the right coord source + grab radius.
+// True for touch events; lets us read the right coordinate source.
 function isTouchEvent(e) { return !!(e.touches || e.changedTouches); }
 
 // Map a mouse/touch event to canvas coordinates, accounting for the element's
@@ -1837,15 +1837,6 @@ function roundRect(x, y, w, h, r, c) {
   c.arcTo(x, y + h, x, y, r);
   c.arcTo(x, y, x + w, y, r);
   c.closePath();
-}
-function distToSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const l2 = dx * dx + dy * dy;
-  if (l2 === 0) return Math.hypot(px - x1, py - y1);
-  let tt = ((px - x1) * dx + (py - y1) * dy) / l2;
-  tt = clamp(tt, 0, 1);
-  const cx = x1 + tt * dx, cy = y1 + tt * dy;
-  return Math.hypot(px - cx, py - cy);
 }
 
 /* -------------------------------------------------------------------------
