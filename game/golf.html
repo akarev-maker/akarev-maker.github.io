@@ -246,7 +246,7 @@
   <canvas id="game" width="700" height="420"></canvas>
 
   <!-- Mobile-only aiming hint; revealed on touch devices, hidden after first shot -->
-  <div id="touchHint" class="touch-hint hidden">Tap &amp; drag from the ball to aim</div>
+  <div id="touchHint" class="touch-hint hidden">Drag anywhere to aim &amp; shoot</div>
 
   <!-- Sound on/off (Web Audio); always reachable, persists via localStorage -->
   <button id="muteBtn" class="mute-btn" type="button" aria-label="Mute"></button>
@@ -256,8 +256,8 @@
     <h1>Midnight Mini Golf</h1>
     <div class="subtitle">&#9702; NEON ISLAND &#9702;</div>
     <div class="instructions">
-      Click and drag <b>from the ball</b> to aim. The further you pull back,
-      the more power you get &mdash; watch the aim line shift from
+      Drag back <b>anywhere on the green</b> to aim &mdash; the aim line shows
+      from the ball. The further you pull back, the more power, shifting from
       <b style="color:#6bff9e">green</b> to <b style="color:#ffd84d">yellow</b>
       to <b style="color:#ff5b5b">red</b>. Release to shoot.<br><br>
       Sink the ball in as few strokes as possible across 18 holes.
@@ -713,11 +713,6 @@ const isTouchDevice =
   ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 let firstShotTaken = false;
 const touchHint = document.getElementById('touchHint');
-
-// How close the press must be to the ball to start aiming. Touch gets a bigger
-// target (3x the ball radius beyond the mouse threshold) since fingers are coarse.
-const MOUSE_GRAB = BALL_R + 22;
-const TOUCH_GRAB = MOUSE_GRAB + BALL_R * 3;
 
 /* -------------------------------------------------------------------------
    3. LEVEL SETUP
@@ -1739,17 +1734,16 @@ function canvasPos(e) {
 
 function onDown(e) {
   if (state !== 'playing' || ball.moving) return;
-  // For touch, stop the page from scrolling/zooming as soon as a finger lands
-  // on the play area — even if the tap isn't near the ball.
-  if (isTouchEvent(e)) e.preventDefault();
-  const p = canvasPos(e);
-  // must start the drag near the ball (bigger target on touch)
-  const grab = isTouchEvent(e) ? TOUCH_GRAB : MOUSE_GRAB;
-  if (Math.hypot(p.x - ball.x, p.y - ball.y) > grab) return;
+  // Block page scroll/zoom on touch (and text selection on mouse).
+  e.preventDefault();
+  // Aiming is a RELATIVE drag: the slingshot is anchored wherever the press
+  // lands, NOT on the ball. You can start in open space and pull back with full
+  // range even when the ball is jammed in a corner — and your finger never
+  // covers the ball. (Pressing right on the ball still works exactly as before,
+  // since the aim line is drawn from the ball regardless of where you started.)
   aiming = true;
-  aimStart = { x: ball.x, y: ball.y };
-  aimNow = p;
-  if (!isTouchEvent(e)) e.preventDefault();
+  aimStart = canvasPos(e);
+  aimNow = { x: aimStart.x, y: aimStart.y };
 }
 
 function onMove(e) {
